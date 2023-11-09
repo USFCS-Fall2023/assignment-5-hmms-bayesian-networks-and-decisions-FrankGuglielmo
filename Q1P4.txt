@@ -1,0 +1,10 @@
+After putting question 1 into ChatGpt (3.5), I noticed that
+it generated an incorrect answer, as well as fail to answer 
+all of the questions asked. It internalized the first and second
+question contexts, meaning the presence of the first and second 
+batches of information, generating only one response. That response 
+suggested that route 1 was the optimal route, which we know is 
+incorrect. Since it generated faulty utilities, it tried to solve
+the third part incorrectly. It felt that the data was worth 7 minutes
+of waiting, which is a little arbitrary given the original estimates 
+were off. 
