@@ -127,14 +127,71 @@ class HMM:
         find and return the state sequence that generated
         the output sequence, using the Viterbi algorithm.
         """
+        num_states = len(self.transitions) - 1  # Exclude the start state
+        num_time_steps = len(observations)
+        
+        # Initialize the matrices M (for probabilities) and backpointers
+        M = [[0.0 for _ in range(num_states)] for _ in range(num_time_steps)]
+        backpointers = [[0 for _ in range(num_states)] for _ in range(num_time_steps)]
+
+        # State index mapping
+        state_indices = {state: idx for idx, state in enumerate(self.transitions) if state != '#'}
+        states = list(state_indices.keys())
+
+        # Initialize the first column of M with the initial probabilities
+        for s in states:
+            state_idx = state_indices[s]
+            M[0][state_idx] = self.transitions['#'].get(s, 0) * self.emissions[s].get(observations[0], 0)
+            backpointers[0][state_idx] = 0  # Start state backpointer is arbitrary
+
+        # Fill in the Viterbi matrix and backpointers
+        for t in range(1, num_time_steps):
+            for s in states:
+                state_idx = state_indices[s]
+                max_prob, max_state = max(
+                    ((M[t-1][prev_state_idx] * self.transitions[prev_state].get(s, 0) * self.emissions[s].get(observations[t], 0), prev_state_idx)
+                     for prev_state, prev_state_idx in state_indices.items()),
+                    key=lambda x: x[0]
+                )
+                M[t][state_idx] = max_prob
+                backpointers[t][state_idx] = max_state
+
+        # Reconstruct the most likely state path
+        best_path = []
+        # Start with the state that has the highest probability at the last time step
+        best_state = max(range(num_states), key=lambda idx: M[num_time_steps-1][idx])
+        best_path.append(states[best_state])
+
+        # Follow the backpointers to find the best path
+        for t in range(num_time_steps-1, 0, -1):
+            best_state = backpointers[t][best_state]
+            best_path.insert(0, states[best_state])
+
+        return best_path
 
 
 
 model = HMM()
 model.load('two_english')
 observations = model.generate(10)
-print(observations)
 
-final_state, forward_matrix = model.forward(observations)
-print(final_state)
+num_states = len(model.transitions) - 1
+num_time_steps = len(observations)
+M = [[0.0 for _ in range(num_states)] for _ in range(num_time_steps)]
+
+print(M)
+
+
+
+
+
+
+
+# print(observations)
+# viterbi_path = model.viterbi(observations)
+# print(viterbi_path)
+
+
+# final_state, forward_matrix = model.forward(observations)
+# print(final_state)
 
