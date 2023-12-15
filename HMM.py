@@ -4,7 +4,7 @@ import random
 import argparse
 import codecs
 import os
-import numpy
+import numpy as np
 
 # observations
 class Observation:
@@ -29,6 +29,8 @@ class HMM:
 
         self.transitions = transitions
         self.emissions = emissions
+        #Keep a list of all the possible states
+        self.states = []
 
     ## part 1 - you do this.
     def load(self, basename):
@@ -44,7 +46,9 @@ class HMM:
                     prob = float(prob)
                     if state_from not in self.transitions:
                         self.transitions[state_from] = {}
-                    self.transitions[state_from][state_to] = prob
+                    self.transitions[state_from][state_to] = float(prob)
+                    if state_from != '#' and state_from not in self.states:
+                        self.states.append(state_from)
         
         # Load emissions
         with open(f'{basename}.emit', 'r') as file:
@@ -71,53 +75,49 @@ class HMM:
 
         # Start with the initial state ('#')
         current_state = '#'
-        observation = ''
+        stateseq = []
+        observations = []
 
         for _ in range(n):
-            # Select the next state using the transition probabilities of the current state
-            states, weights = zip(*self.transitions[current_state].items())
-            current_state = random.choices(states, weights)[0]
+            # Determine the next state using the transition probabilities of the current state
+            next_state = np.random.choice(
+                list(self.transitions[current_state].keys()),
+                p=list(self.transitions[current_state].values())
+            )
+            stateseq.append(next_state)
 
-            # Select the emission using the emission probabilities of the current state
-            if current_state in self.emissions:
-                emissions, emission_weights = zip(*self.emissions[current_state].items())
-                observation += random.choices(emissions, emission_weights)[0]
-            else:
-                # If there are no emissions for the current state, raise an error or handle appropriately
-                raise ValueError(f"No emissions found for the current state: {current_state}")
+            # Determine the next output based on the next state's emission probabilities
+            next_output = np.random.choice(
+                list(self.emissions[next_state].keys()),
+                p=list(self.emissions[next_state].values())
+            )
+            observations.append(next_output)
 
-        return observation
+            # Update the current state
+            current_state = next_state
+
+        return Observation(stateseq, observations)
 
 
     def forward(self, observations):
-        num_states = len(self.transitions) - 1  # Exclude the start state
-        num_time_steps = len(observations)
+        M = np.zeros((len(self.states), len(observations)))  # Use self.states to define the size of the forward matrix
+        start_probs = self.transitions['#']
 
-        # Initialize the matrix M with zeros for states, but we need num_time_steps + 1 rows
-        M = [[0.0 for _ in range(num_states)] for _ in range(num_time_steps + 1)]
-        state_indices = {state: idx for idx, state in enumerate(self.transitions) if state != '#'}
-        states = list(state_indices.keys())
+        # Initialize the forward matrix with the start probabilities
+        for i, state in enumerate(self.states):
+            if observations[0] in self.emissions[state]:  # Check if the first observation is possible for the state
+                M[i, 0] = start_probs.get(state, 0) * self.emissions[state].get(observations[0], 0)
 
-        # Set up the initial probabilities from the start state
-        for s in states:
-            state_idx = state_indices[s]
-            M[0][state_idx] = self.transitions['#'].get(s, 0) * self.emissions[s].get(observations[0], 0)
+        # Iterate over the rest of the observations
+        for t in range(1, len(observations)):
+            for s_to_idx, s_to in enumerate(self.states):
+                for s_from_idx, s_from in enumerate(self.states):
+                    if observations[t] in self.emissions[s_to]:  # Check if the observation is possible for the state
+                        M[s_to_idx, t] += (M[s_from_idx, t-1] * self.transitions[s_from].get(s_to, 0) * self.emissions[s_to].get(observations[t], 0))
 
-        # Propagate forward
-        for t in range(1, num_time_steps):
-            for s in states:
-                state_idx = state_indices[s]
-                sum_prob = 0
-                for s2 in states:
-                    prev_state_idx = state_indices[s2]
-                    sum_prob += M[t - 1][prev_state_idx] * self.transitions[s2].get(s, 0) * self.emissions[s].get(observations[t], 0)
-                M[t][state_idx] = sum_prob
-
-        # The final state probabilities (not necessary for the forward algorithm)
-        final_probs = [M[num_time_steps - 1][state_idx] for state_idx in range(num_states)]
-        final_state = states[final_probs.index(max(final_probs))]
-
-        return final_state, M
+        # Probability of the observation sequence is the sum of the final column
+        prob_obs_sequence = np.sum(M[:, -1])
+        return prob_obs_sequence
 
     ## you do this: Implement the Viterbi alborithm. Given an Observation (a list of outputs or emissions)
     ## determine the most likely sequence of states.
@@ -128,7 +128,7 @@ class HMM:
         the output sequence, using the Viterbi algorithm.
         """
         num_states = len(self.transitions) - 1  # Exclude the start state
-        num_time_steps = len(observations)
+        num_time_steps = len(observation)
         
         # Initialize the matrices M (for probabilities) and backpointers
         M = [[0.0 for _ in range(num_states)] for _ in range(num_time_steps)]
@@ -170,28 +170,36 @@ class HMM:
         return best_path
 
 
+def test_load(basename):
+    model = HMM()
+    model.load(basename)
+    print(model.transitions)
+    print(model.emissions)
 
-model = HMM()
-model.load('two_english')
-observations = model.generate(10)
+def test_generate(basename):
+    model = HMM()
+    model.load(basename)
+    print(model.generate(10))
 
-num_states = len(model.transitions) - 1
-num_time_steps = len(observations)
-M = [[0.0 for _ in range(num_states)] for _ in range(num_time_steps)]
+def test_forward(basename):
+    model = HMM()
+    model.load(basename)
+    
+    #For every line in ambiguous_sents, split the line into words and make them a list
+    with open('ambiguous_sents.obs', 'r') as file:
+        observations = [line.strip().split() for line in file]
+        for observation in observations:
+            sequence = model.forward(observation)
+            print("Forward probability of observation sequence: ", observation, " is ", sequence)
 
-print(M)
+def test_viterbi(basename):
+    model = HMM()
+    model.load(basename)
+    observations = model.generate(10)
+    print(model.viterbi(observations))
 
-
-
-
-
-
-
-# print(observations)
-# viterbi_path = model.viterbi(observations)
-# print(viterbi_path)
-
-
-# final_state, forward_matrix = model.forward(observations)
-# print(final_state)
+test_load('two_english')
+test_generate('two_english')
+test_forward('partofspeech.browntags.trained')
+# test_viterbi('two_english')
 
